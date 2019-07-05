@@ -1,3 +1,4 @@
+#!/bin/python
 ##### encoding: utf-8 
 import sys,os,optparse,re
 import json,urllib2,requests
@@ -12,11 +13,17 @@ parser.add_option("-d","--debug",dest="DEBUG",action="store_true",default=False,
 
 (options, args)=parser.parse_args(sys.argv)
 
-students={'김준호':{'CCID':'CCID-753048','INSPIRE_number':'INSPIRE-00430373','affiliation':'Seoul Natl. U.','full_name':'Kim, Junho','KRI':11337628,'paper_name':'J. Kim','alt_name':'Kim, J.'},
-          '김재성':{'CCID':'CCID-760699','INSPIRE_number':'INSPIRE-00585799','affiliation':'Seoul Natl. U.','full_name':'Kim, Jae Sung','KRI':11337129,'paper_name':'J.S. Kim','alt_name':'Kim, J.S.'},
-          '이한얼':{'CCID':'CCID-752808','INSPIRE_number':'INSPIRE-00549724','affiliation':'Seoul Natl. U.','full_name':'Lee, Haneol','KRI':11323419,'paper_name':'H. Lee','alt_name':'Lee, H.'},
-          '오성빈':{'CCID':'CCID-752789','INSPIRE_number':'INSPIRE-00384981','affiliation':'Seoul Natl. U.','full_name':'Oh, Sung Bin','KRI':11323443,'paper_name':'S.B. Oh','alt_name':'Oh, S.B.'},
-          }
+students={'김준호':{'affiliation':'Seoul Natl. U.','full_names':['Kim, Junho','Kim, J.'],'KRI':11337628,'paper_names':['J. Kim']},
+          '김재성':{'affiliation':'Seoul Natl. U.','full_names':['Kim, Jae Sung','Kim, J.S.'],'KRI':11337129,'paper_names':['J.S. Kim','J. S. Kim']},
+          '이한얼':{'affiliation':'Seoul Natl. U.','full_names':['Lee, Haneol','Lee, H.'],'KRI':11323419,'paper_names':['H. Lee']},
+          '오성빈':{'affiliation':'Seoul Natl. U.','full_names':['Oh, Sung Bin','Oh, S.B.'],'KRI':11323443,'paper_names':['S.B. Oh','S. B. Oh']},
+          '변지환':{'affiliation':'Seoul Natl. U.','full_names':['Bhyun, Ji Hwan','Bhyun, J.H.'],'KRI':11456491,'paper_names':['J.H. Bhyun','J. H. Bhyun']},
+          '전시현':{'affiliation':'Seoul Natl. U.','full_names':['Jeon, Sihyun','Jeon, S.'],'KRI':11571169,'paper_names':['S. Jeon']},
+      }
+
+professors={'양운기':{'affiliation':'Seoul Natl. U.','full_names':['Yang, Unki'],'KRI':00000000,'paper_names':['U. Yang']},}
+
+people={}
 
 def GetResponse(query):
     query=query.replace(' ','+')
@@ -98,32 +105,33 @@ def GetNumberOfAuthors(item):
 def CheckAuthor(a,b):
     if 'affiliation' in a:
         if a['affiliation']!=b['affiliation']: return False
-    if a['full_name']!=b['full_name'] and a['full_name']!=b['alt_name']: return False
+    if not a['full_name'] in b['full_names']: return False
     return True
 
-def GetStudentNames(item):
-    student_names=[]
+def GetPeople(item):
+    this_people={}
     for a in item['authors']:
-        for key,s in students.iteritems():
-            if CheckAuthor(a,s):
-                student_names+=[key]
-    return ','.join(student_names).decode('utf-8')
+        for key,p in people.iteritems():
+            if CheckAuthor(a,p):
+                this_people[key]=p
+    return this_people
 
-def GetStudentKRIs(item):
-    student_kris=[]
-    for a in item['authors']:
-        for key,s in students.iteritems():
-            if CheckAuthor(a,s):
-                student_kris+=[str(s['KRI'])]
-    return ','.join(student_kris)
+def GetPeopleNames(item):
+    this_people=GetPeople(item)
+    names=[]
+    for key in this_people.iterkeys():
+        names+=[key]
+    return ','.join(names).decode('utf-8')
+
+def GetPeopleKRIs(item):
+    this_people=GetPeople(item)
+    kris=[]
+    for p in this_people.itervalues():
+        kris+=[str(p['KRI'])]
+    return ','.join(kris)
     
-def GetNumberOfStudents(item):
-    n=0
-    for a in item['authors']:
-        for key,s in students.iteritems():
-            if CheckAuthor(a,s):
-                n+=1
-    return n
+def GetNumberOfPeople(item):
+    return len(GetPeople(item))
 
 def GetDOI(item):
     if type(item['doi']) is not list:
@@ -182,11 +190,41 @@ def SavePaper(item):
         SavePaperAlt(item)
     return
 
+def FindPersonMatches(doc,person):
+    matches=[]
+    for paper_name in person['paper_names']:
+        for i in range(len(doc)):
+            for inst in doc[i].searchFor(paper_name):
+                unique=True
+                for match in matches:
+                    if match[0]==i and match[1].intersects(inst):
+                        unique=False
+                if unique: matches+=[(i,inst)]
+    return matches
+
+def FindPersonMatchesTight(doc,person):
+    matches=[]
+    for paper_name in person['paper_names']:
+        for i in range(len(doc)):
+            for inst in doc[i].searchFor(', '+paper_name):
+                unique=True
+                for match in matches:
+                    if match[0]==i and match[1].intersects(inst):
+                        unique=False
+                if unique: matches+=[(i,inst)]
+    return matches
+
 if options.IsTest:
     options.query='find author u. yang and i. park and tc p and d >= 2018-03'
     options.DEBUG=True
 
+if options.IsProfessor:
+    people=professors
+else:
+    people=students
+
 print options
+print people
 
 os.system('mkdir -p '+options.output)
 os.system('mkdir -p tmp')
@@ -200,44 +238,85 @@ for index,item in enumerate(items):
     page=GetPage(item)
     date=GetDate(item)
     nauthor=GetNumberOfAuthors(item)
-    student_names=GetStudentNames(item)
-    student_kris=GetStudentKRIs(item)
-    nstudent=GetNumberOfStudents(item)
-    line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+student_names+'\t'+student_kris+'\t'+str(nstudent)
-    print line 
+    people_names=GetPeopleNames(item)
+    people_kris=GetPeopleKRIs(item)
+    npeople=GetNumberOfPeople(item)
+    line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
 
-    if options.DEBUG: print item['recid'], GetDOI(item)
+    if options.DEBUG: 
+        print line 
+        print item['recid'], GetDOI(item)
 
+    #Download paper
     pdfname='tmp/'+str(item['recid'])+'.pdf'
     if not os.path.exists(pdfname):
         SavePaper(item)
     
+    #Make abstract pdf
     doc=fitz.open(pdfname)
+    abspagenumber=0
     for pagenumber in range(len(doc)):
         page=doc[pagenumber]
-        if page.searchFor("abstract") or page.searchFor("Abstract") or page.searchFor("ABSTRACT"):
-            doc.select([pagenumber])
-            doc.save(options.output+'/'+str(index+1)+'-1.pdf')
+        if page.searchFor("abstract") or page.searchFor("Abstract") or page.searchFor("ABSTRACT") or page.searchFor("A B S T R A C T"):
+            abspagenumber=pagenumber
             break;
+
+    doc.select(range(abspagenumber+1))
+    doc.save(options.output+'/'+str(index+1)+'-1.pdf')
     doc.close();
     
+    #Make authors pdf
     doc=fitz.open(pdfname)
-    last=0
+    start=0
     for pagenumber in range(len(doc)):
         page=doc[pagenumber]
-        if page.searchFor("Tumasyan"):last=pagenumber
-        
-    doc.select(range(last,len(doc)))
-    count=0
-    for student in students.itervalues():
-        for page in doc:
-            text_instances=page.searchFor(' '+student['paper_name'])
-            for inst in text_instances:
-                print(inst,type(inst))
-                highlight=page.addHighlightAnnot(inst)
-                count+=1
-    if count!=nstudent:
-        sys.exit('[Error] ['+__name__+'] inconsistent number of students '+str(nstudent)+' '+str(count))
+        if page.searchFor("Tumasyan"):start=pagenumber
+    if start>abspagenumber:
+        end=len(doc)-1
+    else:
+        end=max(abspagenumber-1,0)
+    print start, end, len(doc), range(start,end+1)
+    doc.select(range(start,end+1))
+ 
+    ambiguous=[]
+    highlights=[]
+    for person in GetPeople(item).itervalues():
+    #step 1. simple search
+        matches=FindPersonMatches(doc,person)
+        print person['full_names'][0], matches
+        if len(matches)==1:
+            doc[matches[0][0]].addHighlightAnnot(matches[0][1])
+            highlights+=[matches[0]]
+
+    #step 2. tight search
+        elif len(matches)>1:
+            matches_tight=FindPersonMatchesTight(doc,person)
+            print person['full_names'][0], matches_tight
+            if len(matches_tight)==1:
+                doc[matches_tight[0][0]].addHighlightAnnot(matches_tight[0][1])
+                highlights+=[matches_tight[0]]
+            else: 
+                ambiguous+=[matches]
+    
+    #step 3. select the closest to others
+    page_y=doc[0].bound().y1
+    for am in ambiguous:
+        print "ambiguous matches",am
+        closest=am[0]
+        record=100000
+        for match in am:
+            for highlight in highlights:
+                this_record=abs((match[0]*page_y+match[1].y0)-(highlight[0]*page_y+highlight[1].y0))
+                if this_record<record:
+                    closest=match
+                    record=this_record
+        doc[closest[0]].addHighlightAnnot(closest[1])
+        print "closest match",record, match
+        highlights+=[closest]
 
     doc.save(options.output+'/'+str(index+1)+'-2.pdf')
     doc.close();
+            
+    if len(highlights)!=npeople:
+        sys.exit('[Error] ['+__name__+'] inconsistent number of people '+str(npeople)+' '+str(len(highlights)))
+
