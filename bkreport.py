@@ -21,7 +21,7 @@ students={'김준호':{'affiliation':'Seoul Natl. U.','full_names':['Kim, Junho'
           '전시현':{'affiliation':'Seoul Natl. U.','full_names':['Jeon, Sihyun','Jeon, S.','Jeon, S'],'KRI':11571169,'paper_names':['S. Jeon']},
       }
 
-professors={'양운기':{'affiliation':'Seoul Natl. U.','full_names':['Yang, Unki'],'KRI':11182507,'paper_names':['U. Yang']},}
+professors={'양운기':{'affiliation':'Seoul Natl. U.','full_names':['Yang, Unki'],'KRI':11182507,'paper_names':['U. Yang','U.K. Yang','U. K. Yang']},}
 
 people={}
 
@@ -238,7 +238,7 @@ def FindPersonMatchesTight(doc,person):
     return matches
 
 if options.IsTest:
-    options.query='find author u. yang and i. park and tc p and d >= 2018-03'
+    options.query='find author u. yang and i. park and tc p and d >= 2019-07'
 
 if options.IsProfessor:
     people=professors
