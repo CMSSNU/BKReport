@@ -1,15 +1,33 @@
 #!/bin/python
 # -*- coding: utf-8 -*-
 import sys,os,optparse,re
+import json
 import requests
 import fitz
 
-parser=optparse.OptionParser()
-parser.add_option("-q","--query",dest="query",help="inspirehep query ref. https://inspirehep.net/info/hep/search-tips")
-parser.add_option("-p","--professor",dest="IsProfessor",action="store_true",default=False,help="run mode for professor")
-parser.add_option("-o","--output",dest="output",default='out',help="output directory")
-parser.add_option("-t","--test",dest="IsTest",action="store_true",default=False,help="test mode")
-parser.add_option("-d","--debug",dest="DEBUG",action="store_true",default=False,help="debug mode")
+class MyParser(optparse.OptionParser):
+    def format_epilog(self, formatter):
+        return self.expand_prog_name(self.epilog)
+
+parser=MyParser(usage='%prog {--query QEURY|--input INFILE} [--output OUTFILE] [--select SELECTIONEXP]',version='1.0',description='Listing papers using INSPIREHEP and finding authors in PDF file',epilog='''EXAMPLES: 
+  ## find papars with "author = u. yang && i. park" and "typecode=Published" and "JournalYear=2019" from inspirehep.
+  ## And select papers published in 2019Jan<=date<=2019June
+    bekreport --query "find author u. yang and i. park and tc p and jy 2019" --selection "date[201901,201906]"
+  ## Start from INFO file in output directory of other run.
+  bekreport --input out/info.txt --selection "date[201903,201903]"
+
+NOTE:
+  "date" query in inspirehep is not reliable.
+  So, use "journalyear(jy)" and --select argument.
+''')
+parser.add_option('-q','--query',dest='query',type='str',help='query string to be used for inspirehep. Refernce: https://inspirehep.net/info/hep/search-tips')
+parser.add_option('-i','--input',dest='info',default='',help='using info file instead of query')
+parser.add_option('-o','--output',dest='output',default='out',type='str',help='output directory')
+parser.add_option('-p','--professor',dest='IsProfessor',action='store_true',default=False,help='run mode for professor')
+parser.add_option('-t','--test',dest='IsTest',action='store_true',default=False,help='test mode')
+parser.add_option('-d','--debug',dest='DEBUG',action='store_true',default=False,help='debug mode')
+parser.add_option('-s','--select',dest='select',type='str',default='',help='selection expressions. "date[201708,201801]"->201708<=date<=201801. "date(201708,201801)"->201708<date<201801')
+#parser.add_option('-v','--verbose',dest='VERBOS',action='store_true',default=False,help='verbose mode')
 
 (options, args)=parser.parse_args(sys.argv)
 
@@ -25,13 +43,22 @@ professors={'양운기':{'affiliation':'Seoul Natl. U.','full_names':['Yang, Unk
 
 people={}
 
-def GetURL(query):
+def GetQueryURL(query):
     query=query.replace(' ','+')
     return 'https://inspirehep.net/search?of=recjson&p='+query
 
+def GetRecordURL(recid):
+    return 'https://inspirehep.net/record/'+str(recid)+'?of=recjson'
+
 def GetTitle(item):
     try: title=item['title']['title']
-    except: title=item['title'][0]['title']
+    except:
+        try: title=item['title'][0]['title']
+        except:
+            try: title=item['title_additional'][0]['title']
+            except:
+                print 'Cannot find title'
+                print json.dumps(item,indent=2)
     return title
 
 def GetJournal(item):
@@ -73,7 +100,7 @@ def GetISSN(item):
     elif journal=='Physical Review Letters': 
         return '0031-9007'
     elif journal=='European Physical Journal C': 
-        return '1434-6052'
+        return '1434-6044'
     elif journal=='IEEE Transactions on Nuclear Science': 
         return '0018-9499'
     elif journal=='Physics Letters B':
@@ -106,7 +133,13 @@ def GetDate(item):
         date=item['imprint']['date']
     elif journal=='Journal of High Energy Physics':
         r=requests.get('http://doi.org/'+GetDOI(item))
-        date=re.search(r'First Online: </span><span class="article-dates__first-online"><time datetime="([0-9]{4}-[0-9]{2}-[0-9]{2})">',r.content).group(1)
+        rr=re.search(r'First Online: </span><span class="article-dates__first-online"><time datetime="([0-9]{4}-[0-9]{2}-[0-9]{2})">',r.content)
+        if not rr: rr=re.search(r'Published<span class="u-hide">: </span><span class="u-clearfix c-bibliographic-information__value"><time datetime="([0-9]{4}-[0-9]{2}-[0-9]{2})">',r.content)
+        if rr:
+            date=rr.group(1)
+        else:
+            print r.content
+            print 'http://doi.org/'+GetDOI(item)
     else:
         errorline='  [Error] [GetDate] Cannot find date'
         summary+=[errorline]
@@ -171,14 +204,22 @@ def SavePaperAlt(item):
         errorline='  [Warning] [SavePaperAlt] not uniqe matching file '+str(count)+'. Getting last one.'
         print errorline
         summary+=[errorline]
-
+    elif count==0:
+        errorline='  [Warning] [SavePaperAlt] no matching file '+str(count)+'. SavePaperAlt failed.'
+        print errorline
+        summary+=[errorline]
+        if options.DEBUG:
+            print json.dumps(item['files'],indent=2)
+        return False
+        
     r=requests.get(url)
     if r:
         with open('tmp/'+str(item['recid'])+'.pdf','wb') as rawpdf:
             rawpdf.write(r.content)
+        return True
     else:
         summary+=['  [Error] [SavePaperAlt] url error '+url+' Try later']
-    return
+        return False
 
 def SavePaper(item):
     journal=GetJournal(item)
@@ -210,7 +251,11 @@ def SavePaper(item):
             rawpdf.write(r.content)
     else:
         print '[Info] [SavePaper] cannot access '+url+' Trying alternative method'
-        SavePaperAlt(item)
+        rr=SavePaperAlt(item)
+        print rr
+        if not SavePaperAlt(item):
+            while not os.path.exists('tmp/'+str(item['recid'])+'.pdf'):
+                raw_input('[Info] [SavePaper] Failed to get '+GetDOI(item)+'\n please save it as \'tmp/'+str(item['recid'])+'.pdf\' mannually and press Enter key.')
     return
 
 def FindPersonMatches(doc,person):
@@ -237,45 +282,122 @@ def FindPersonMatchesTight(doc,person):
                 if unique: matches+=[(i,inst)]
     return matches
 
+#=========================================================================
+#=========================================================================
+
 if options.IsTest:
-    options.query='find author u. yang and i. park and tc p and d >= 2019-07'
+    options.query='find author u. yang and i. park and tc p and jy 2019'
 
 if options.IsProfessor:
     people=professors
 else:
     people=students
 
-if options.DEBUG:
-    print "Options"
-    print options
-    print "People"
-    print people
+    
+date_select=re.search(r'date([\(\[0-9]*),([0-9\]\)]*)',options.select)
+date_begin=None
+date_end=None
+if date_select:
+    date_begin=date_select.group(1)
+    if date_begin[0] == '[' : date_begin=int(date_begin[1:])-1
+    elif date_begin[0] == '(' : date_begin=int(date_begin[1:])
+    else:
+        print '[Error] Wrong selection expression'
+        exit(1)
+    date_end=date_select.group(2)
+    if date_end[-1] == ']' : date_end=int(date_end[:-1])+1
+    elif date_end[-1] == ')' : date_end=int(date_end[:-1])
+    else:
+        print '[Error] Wrong selection expression'
+        exit(1)
 
-print "QUERY: "+options.query
-print GetURL(options.query)
+if options.DEBUG:
+    print "--------------Options------------------"
+    print options
+    print "--------------People-------------------"
+    print json.dumps(people,indent=2)
+    print "---------------------------------------"
+
+if not options.info == "":
+    print "> INFO file: "+options.info
+else:
+    print "> QUERY: "+options.query
+    print "> URL: "+GetQueryURL(options.query)
+print "> SELECTION:"
+if date_begin : print "    date > "+str(date_begin)
+if date_end : print "    date < "+str(date_end)
+
+if os.path.exists(options.output):
+    suffix_index=0
+    while os.path.exists(options.output+"_"+str(suffix_index)):
+        suffix_index+=1
+    options.output+='_'+str(suffix_index)
+print "> OUT: "+options.output
 os.system('mkdir -p '+options.output)
 os.system('mkdir -p tmp')
 
 summaries=[]
-request_for_num=requests.get(GetURL(options.query).replace("recjson","xm")+'&rg=1&ot=001')
-nitem=int(re.search(r"Search-Engine-Total-Number-Of-Results: ([0-9]+)",request_for_num.text).group(1))
-print "Total number of Items:",nitem
 
-print "Get Json from INSPIREHEP"
+nitem=0
+infofilelines=[]
+if not options.info == "":
+    infofilelines= [line.rstrip('\n') for line in open(options.info)]
+    nitem=len(infofilelines)
+else:
+    request_for_num=requests.get(GetQueryURL(options.query).replace("recjson","xm")+'&rg=1&ot=001')
+    request_for_num_search=re.search(r"Search-Engine-Total-Number-Of-Results: ([0-9]+)",request_for_num.text)
+    if request_for_num_search: nitem=int(request_for_num_search.group(1))
+
+if nitem < 1:
+    print '[Error] no item'
+    exit(1)
+    
+print "> Total number of Items before selection:",nitem
+
+print "> Get Json from INSPIREHEP"
 items=[]
-for ichunk in range(nitem/25+1):
-#for ichunk in range(4,6):
-    print str(ichunk*25)+'/'+str(nitem)
-    items+=requests.get(GetURL(options.query+'&jrec='+str(25*ichunk+1))).json()
-print str(len(items))+'/'+str(nitem)
+if not options.info =="":
+    for i in range(len(infofilelines)):
+        line=infofilelines[i]
+        recid=int(line.split()[1])
+        items+=requests.get(GetRecordURL(recid)).json()
+        if (i+1)%10==0: print str(i+1)+'/'+str(nitem)
+else:
+    for ichunk in range(nitem/25+1):
+        print str(ichunk*25)+'/'+str(nitem)
+        items+=requests.get(GetQueryURL(options.query+'&jrec='+str(25*ichunk+1))).json()
+    print str(len(items))+'/'+str(nitem)
+    
+
+print "> Selecting"
+items_selected=[]
+for index,item in enumerate(items):
+    date=int(GetDate(item))
+    if date_begin:
+        if date <= date_begin: continue
+    if date_end:
+        if date >= date_end: continue
+    items_selected+=[item]
+items=items_selected
+print "> Total number of Items after selection:",len(items)
+
+if options.info =="":
+    print "> Sorting by date"
+    for i in range(len(items)-1):
+        for j in range(i+1,len(items)):
+            if int(GetDate(items[i])) > int(GetDate(items[j])):
+                items[i], items[j] = items[j], items[i]
+    
 
 outputfile=open(options.output+'/out.txt','w')
+infofile=open(options.output+'/info.txt','w')
 for index,item in enumerate(items):
     summary=[]
 
     title=GetTitle(item)
     journal=GetJournal(item)
     issn=GetISSN(item)
+    doi=GetDOI(item)
     volume=GetVolume(item)
     page=GetPage(item)
     date=GetDate(item)
@@ -285,11 +407,13 @@ for index,item in enumerate(items):
     npeople=GetNumberOfPeople(item)
     recid=item['recid']
 
-    line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
+    #line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
+    line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn.replace('-','')+'\t'+doi+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
     if options.DEBUG: print line
     outputfile.write((line+'\n').encode('utf-8'))
  
-    infoline="{:3.3} {:9.9} {:32.32} {:30.30}".format(str(index+1),str(recid),GetDOI(item),title.encode('utf-8'))
+    infoline="{:3.3} {:9.9} {:32.32} {:10.10} {:30.30}".format(str(index+1),str(recid),GetDOI(item),GetDate(item),title.encode('utf-8'))
+    infofile.write(infoline+'\n')
     summary=[infoline]+summary
     for l in summary: print l
 
