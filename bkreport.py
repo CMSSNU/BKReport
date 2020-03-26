@@ -57,8 +57,8 @@ def GetTitle(item):
         except:
             try: title=item['title_additional'][0]['title']
             except:
-                print 'Cannot find title'
-                print json.dumps(item,indent=2)
+                print('Cannot find title')
+                print(json.dumps(item,indent=2))
     return title
 
 def GetJournal(item):
@@ -138,8 +138,8 @@ def GetDate(item):
         if rr:
             date=rr.group(1)
         else:
-            print r.content
-            print 'http://doi.org/'+GetDOI(item)
+            print(r.content)
+            print('http://doi.org/'+GetDOI(item))
     else:
         errorline='  [Error] [GetDate] Cannot find date'
         summary+=[errorline]
@@ -202,14 +202,14 @@ def SavePaperAlt(item):
 
     if count>1: 
         errorline='  [Warning] [SavePaperAlt] not uniqe matching file '+str(count)+'. Getting last one.'
-        print errorline
+        print(errorline)
         summary+=[errorline]
     elif count==0:
         errorline='  [Warning] [SavePaperAlt] no matching file '+str(count)+'. SavePaperAlt failed.'
-        print errorline
+        print(errorline)
         summary+=[errorline]
         if options.DEBUG:
-            print json.dumps(item['files'],indent=2)
+            print(json.dumps(item['files'],indent=2))
         return False
         
     r=requests.get(url)
@@ -250,9 +250,9 @@ def SavePaper(item):
         with open('tmp/'+str(item['recid'])+'.pdf','wb') as rawpdf:
             rawpdf.write(r.content)
     else:
-        print '[Info] [SavePaper] cannot access '+url+' Trying alternative method'
+        print('[Info] [SavePaper] cannot access '+url+' Trying alternative method')
         rr=SavePaperAlt(item)
-        print rr
+        print(rr)
         if not SavePaperAlt(item):
             while not os.path.exists('tmp/'+str(item['recid'])+'.pdf'):
                 raw_input('[Info] [SavePaper] Failed to get '+GetDOI(item)+'\n please save it as \'tmp/'+str(item['recid'])+'.pdf\' mannually and press Enter key.')
@@ -302,37 +302,37 @@ if date_select:
     if date_begin[0] == '[' : date_begin=int(date_begin[1:])-1
     elif date_begin[0] == '(' : date_begin=int(date_begin[1:])
     else:
-        print '[Error] Wrong selection expression'
+        print('[Error] Wrong selection expression')
         exit(1)
     date_end=date_select.group(2)
     if date_end[-1] == ']' : date_end=int(date_end[:-1])+1
     elif date_end[-1] == ')' : date_end=int(date_end[:-1])
     else:
-        print '[Error] Wrong selection expression'
+        print('[Error] Wrong selection expression')
         exit(1)
 
 if options.DEBUG:
-    print "--------------Options------------------"
-    print options
-    print "--------------People-------------------"
-    print json.dumps(people,indent=2)
-    print "---------------------------------------"
+    print("--------------Options------------------")
+    print(options)
+    print("--------------People-------------------")
+    print(json.dumps(people,indent=2))
+    print("---------------------------------------")
 
 if not options.info == "":
-    print "> INFO file: "+options.info
+    print("> INFO file: "+options.info)
 else:
-    print "> QUERY: "+options.query
-    print "> URL: "+GetQueryURL(options.query)
-print "> SELECTION:"
-if date_begin : print "    date > "+str(date_begin)
-if date_end : print "    date < "+str(date_end)
+    print("> QUERY: "+options.query)
+    print("> URL: "+GetQueryURL(options.query))
+print("> SELECTION:")
+if date_begin : print("    date > "+str(date_begin))
+if date_end : print("    date < "+str(date_end))
 
 if os.path.exists(options.output):
     suffix_index=0
     while os.path.exists(options.output+"_"+str(suffix_index)):
         suffix_index+=1
     options.output+='_'+str(suffix_index)
-print "> OUT: "+options.output
+print("> OUT: "+options.output)
 os.system('mkdir -p '+options.output)
 os.system('mkdir -p tmp')
 
@@ -349,27 +349,27 @@ else:
     if request_for_num_search: nitem=int(request_for_num_search.group(1))
 
 if nitem < 1:
-    print '[Error] no item'
+    print('[Error] no item')
     exit(1)
     
-print "> Total number of Items before selection:",nitem
+print("> Total number of Items before selection:",nitem)
 
-print "> Get Json from INSPIREHEP"
+print("> Get Json from INSPIREHEP")
 items=[]
 if not options.info =="":
     for i in range(len(infofilelines)):
         line=infofilelines[i]
         recid=int(line.split()[1])
         items+=requests.get(GetRecordURL(recid)).json()
-        if (i+1)%10==0: print str(i+1)+'/'+str(nitem)
+        if (i+1)%10==0: print(str(i+1)+'/'+str(nitem))
 else:
     for ichunk in range(nitem/25+1):
-        print str(ichunk*25)+'/'+str(nitem)
+        print(str(ichunk*25)+'/'+str(nitem))
         items+=requests.get(GetQueryURL(options.query+'&jrec='+str(25*ichunk+1))).json()
-    print str(len(items))+'/'+str(nitem)
+    print(str(len(items))+'/'+str(nitem))
     
 
-print "> Selecting"
+print("> Selecting")
 items_selected=[]
 for index,item in enumerate(items):
     date=int(GetDate(item))
@@ -379,10 +379,10 @@ for index,item in enumerate(items):
         if date >= date_end: continue
     items_selected+=[item]
 items=items_selected
-print "> Total number of Items after selection:",len(items)
+print("> Total number of Items after selection:",len(items))
 
 if options.info =="":
-    print "> Sorting by date"
+    print("> Sorting by date")
     for i in range(len(items)-1):
         for j in range(i+1,len(items)):
             if int(GetDate(items[i])) > int(GetDate(items[j])):
@@ -409,13 +409,13 @@ for index,item in enumerate(items):
 
     #line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
     line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn.replace('-','')+'\t'+doi+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
-    if options.DEBUG: print line
+    if options.DEBUG: print(line)
     outputfile.write((line+'\n').encode('utf-8'))
  
     infoline="{:3.3} {:9.9} {:32.32} {:10.10} {:30.30}".format(str(index+1),str(recid),GetDOI(item),GetDate(item),title.encode('utf-8'))
     infofile.write(infoline+'\n')
     summary=[infoline]+summary
-    for l in summary: print l
+    for l in summary: print(l)
 
     #Download paper
     pdfname='tmp/'+str(recid)+'.pdf'
@@ -452,7 +452,7 @@ for index,item in enumerate(items):
     for person in GetPeople(item).itervalues():
     #step 1. simple search
         matches=FindPersonMatches(doc,person)
-        if options.DEBUG: print person['full_names'][0], matches
+        if options.DEBUG: print(person['full_names'][0], matches)
         if len(matches)==1:
             doc[matches[0][0]].addHighlightAnnot(matches[0][1])
             highlights+=[matches[0]]
@@ -460,7 +460,7 @@ for index,item in enumerate(items):
     #step 2. tight search
         elif len(matches)>1:
             matches_tight=FindPersonMatchesTight(doc,person)
-            if options.DEBUG: print person['full_names'][0], matches_tight
+            if options.DEBUG: print(person['full_names'][0], matches_tight)
             if len(matches_tight)==1:
                 doc[matches_tight[0][0]].addHighlightAnnot(matches_tight[0][1])
                 highlights+=[matches_tight[0]]
@@ -470,7 +470,7 @@ for index,item in enumerate(items):
     #step 3. select the closest to others
     page_y=doc[0].bound().y1
     for am in ambiguous:
-        if options.DEBUG: print "ambiguous matches",am
+        if options.DEBUG: print("ambiguous matches",am)
         closest=am[0]
         record=100000
         for match in am:
@@ -480,7 +480,7 @@ for index,item in enumerate(items):
                     closest=match
                     record=this_record
         doc[closest[0]].addHighlightAnnot(closest[1])
-        if options.DEBUG: print "closest match",record, match
+        if options.DEBUG: print("closest match",record, match)
         highlights+=[closest]
 
     doc.save(options.output+'/'+str(index+1)+'-2.pdf')
@@ -489,12 +489,12 @@ for index,item in enumerate(items):
 
     if len(highlights)!=npeople:
         errorline='  [Error] inconsistent number of people and highlight. people:'+str(npeople)+' highlights:'+str(len(highlights))
-        print errorline
+        print(errorline)
         summary+=[errorline]
     
     if len(summary)>1: summaries+=summary
     
 outputfile.close()
 
-print "\n############ Summary ###########"
-for l in summaries: print l
+print("\n############ Summary ###########")
+for l in summaries: print(l)
