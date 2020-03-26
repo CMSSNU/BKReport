@@ -347,36 +347,56 @@ NOTE:
         summaries=[]
 
         nitem=0
-        infofilelines=[]
+        recids=[]
         if not options.info == "":
             infofilelines= [line.rstrip('\n') for line in open(options.info)]
             nitem=len(infofilelines)
+            for line in infofilelines:
+                recids+=[int(line.split()[1])]
         else:
             request_for_num=requests.get(GetQueryURL(options.query).replace("recjson","xm")+'&rg=1&ot=001')
             request_for_num_search=re.search(r"Search-Engine-Total-Number-Of-Results: ([0-9]+)",request_for_num.text)
             if request_for_num_search: nitem=int(request_for_num_search.group(1))
+            else:
+                print("[Error] no response from INSPIREHEP")
+                exit(1)
+            rg=250
+            for ichunk in range(int(nitem/rg+1)):
+                short_items=requests.get(GetQueryURL(options.query)+'&ot=recid&rg='+str(rg)+'&jrec='+str(rg*ichunk+1)).json()
+                for item in short_items:
+                    recids+=[item['recid']]
 
         if nitem < 1:
             print('[Error] no item')
             exit(1)
-    
+
+        if nitem != len(recids) :
+            print('[Error] nitem != len(recids)')
+            exit(1)
+
         print("> Total number of Items before selection: "+str(nitem))
 
-        print("> Get Json from INSPIREHEP")
+        print("> Get Json from INSPIREHEP or cache")
         items=[]
-        if not options.info =="":
-            for i in range(len(infofilelines)):
-                line=infofilelines[i]
-                recid=int(line.split()[1])
-                items+=requests.get(GetRecordURL(recid)).json()
-                if (i+1)%10==0: print(str(i+1)+'/'+str(nitem))
-        else:
-            for ichunk in range(int(nitem/25+1)):
-                print(str(ichunk*25)+'/'+str(nitem))
-                items+=requests.get(GetQueryURL(options.query+'&jrec='+str(25*ichunk+1))).json()
-            print(str(len(items))+'/'+str(nitem))
+        for i in range(nitem):
+            recid=recids[i]
+            json_path=os.path.join('tmp',str(recid)+'.json')
+            if os.path.exists(json_path):
+                if DEBUG : print("[DEBUG] "+str(i)+" "+str(recid)+" Get from "+json_path)
+                with open(json_path,"rb") as f:
+                    content=f.read()
+                    encoding=chardet.detect(content)['encoding']
+                    items+=json.loads(content.decode(encoding))
+            else:
+                if DEBUG : print("[DEBUG] "+str(i)+" "+str(recid)+" Get from "+GetRecordURL(recid))
+                item=requests.get(GetRecordURL(recid)).json()[0]
+                items+=[item]
+                with open(json_path,"wb") as f:
+                    json.dump(item,f)
+            if (i+1)%10==0:
+                print('  '+str(i+1)+'/'+str(nitem))
+        print('  done')
     
-
         print("> Selecting")
         items_selected=[]
         for index,item in enumerate(items):
