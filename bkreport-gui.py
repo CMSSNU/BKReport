@@ -1,4 +1,5 @@
 import sys, os
+from bkreport import BKReport
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QLineEdit, QPushButton
 
 class BKReportApp(QMainWindow):
@@ -25,8 +26,9 @@ class BKReportApp(QMainWindow):
         self.show()
 
     def Start(self):
-        sys.argv=self.query_edit.text().split()
-        execfile('bkreport.py')
+        args=['--query',self.query_edit.text()]
+        bk=BKReport(args)
+        bk.Run()
         
 app=QApplication(sys.argv)
 bk=BKReportApp()
