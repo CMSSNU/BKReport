@@ -7,6 +7,8 @@ import fitz
 import chardet
 from io import open
 
+summary=[]
+DEBUG=False
 ##################################################
 ############### Get functions#####################
 ##################################################
@@ -100,8 +102,8 @@ def GetDate(item):
         date=item['imprint']['date']
     elif journal=='Journal of High Energy Physics':
         r=requests.get('http://doi.org/'+GetDOI(item))
-        rr=re.search(r'First Online: </span><span class="article-dates__first-online"><time datetime="([0-9]{4}-[0-9]{2}-[0-9]{2})">',r.content)
-        if not rr: rr=re.search(r'Published<span class="u-hide">: </span><span class="u-clearfix c-bibliographic-information__value"><time datetime="([0-9]{4}-[0-9]{2}-[0-9]{2})">',r.content)
+        rr=re.search(r'First Online: </span><span class="article-dates__first-online"><time datetime="([0-9]{4}-[0-9]{2}-[0-9]{2})">',r.content.decode('utf-8'))
+        if not rr: rr=re.search(r'Published<span class="u-hide">: </span><span class="u-clearfix c-bibliographic-information__value"><time datetime="([0-9]{4}-[0-9]{2}-[0-9]{2})">',r.content.decode('utf-8'))
         if rr:
             date=rr.group(1)
         else:
@@ -129,7 +131,7 @@ def CheckAuthor(a,b):
 def GetPeopleInItem(item,people):
     this_people={}
     for a in item['authors']:
-        for key,p in people.iteritems():
+        for key,p in people.items():
             if CheckAuthor(a,p):
                 this_people[key]=p
     return this_people
@@ -137,14 +139,14 @@ def GetPeopleInItem(item,people):
 def GetPeopleNamesInItem(item,people):
     this_people=GetPeopleInItem(item,people)
     names=[]
-    for key in this_people.iterkeys():
+    for key in this_people:
         names+=[key]
     return ','.join(names)
 
 def GetPeopleKRIsInItem(item,people):
     this_people=GetPeopleInItem(item,people)
     kris=[]
-    for p in this_people.itervalues():
+    for p in this_people.values():
         kris+=[str(p['KRI'])]
     return ','.join(kris)
     
@@ -175,6 +177,7 @@ def SavePaperAlt(item):
         errorline='  [Warning] [SavePaperAlt] no matching file '+str(count)+'. SavePaperAlt failed.'
         print(errorline)
         summary+=[errorline]
+        global DEBUG
         if DEBUG:
             print(json.dumps(item['files'],indent=2))
         return False
@@ -191,6 +194,7 @@ def SavePaperAlt(item):
 def SavePaper(item):
     journal=GetJournal(item)
     doi=GetDOI(item)
+    headers={'User-Agent':'Mozilla/5.0'}
     if journal=='Journal of Instrumentation': 
         url='https://iopscience.iop.org/article/'+doi+'/pdf'
     elif journal=='Journal of High Energy Physics': 
@@ -203,8 +207,10 @@ def SavePaper(item):
         return
     elif journal=='Physics Letters B' or journal=='Nuclear Instruments and Methods in Physics Research Section A':
         r=requests.get('https://www.doi.org/'+doi).url
-        r=r[r.rfind('/')+1:]
-        url='https://www.sciencedirect.com/science/article/pii/'+r+'/pdfft'
+        id=r[r.rfind('/')+1:]
+        url='https://www.sciencedirect.com/science/article/pii/'+id+'/pdfft?download=true'
+        r=requests.get(url,headers=headers)
+        url=re.search(r'a href="([^"]*pdf[^"]*)',r.content.decode('utf-8')).group(1)
     elif journal=='Physical Review C':
         url='https://journals.aps.org/prc/pdf/'+doi
     elif journal=='Physical Review D':
@@ -212,14 +218,13 @@ def SavePaper(item):
     else: 
         sys.exit('  [Error] [SavePaper] wrong journal '+journal)
 
-    r=requests.get(url)
+    r=requests.get(url,headers=headers)
     if r:
         with open(os.path.join('tmp',str(item['recid'])+'.pdf'),'wb') as rawpdf:
             rawpdf.write(r.content)
     else:
         print('[Info] [SavePaper] cannot access '+url+' Trying alternative method')
         rr=SavePaperAlt(item)
-        print(rr)
         if not SavePaperAlt(item):
             while not os.path.exists(os.path.join('tmp',str(item['recid']))+'.pdf'):
                 raw_input('[Info] [SavePaper] Failed to get '+GetDOI(item)+'\n please save it as \''+os.path.join(os.path.getcwd(),'tmp',+str(item['recid'])+'.pdf')+'\' mannually and press Enter key.')
@@ -277,18 +282,21 @@ NOTE:
         parser.add_option('-d','--debug',dest='DEBUG',action='store_true',default=False,help='debug mode')
         parser.add_option('-s','--select',dest='select',type='str',default='',help='selection expressions. "date[201708,201801]"->201708<=date<=201801. "date(201708,201801)"->201708<date<201801')
         #parser.add_option('-v','--verbose',dest='VERBOS',action='store_true',default=False,help='verbose mode')
-
         (self.options, args_dummpy)=parser.parse_args(args)
-
         self.options.people={}
+        global DEBUG
+        DEBUG=self.options.DEBUG
+        
 
     def Run(self):
         options=self.options
         if options.IsTest:
             options.query='find author u. yang and i. park and tc p and jy 2020'
 
-        with open(options.PeopleFile) as people_file:
-            options.people=json.load(people_file)
+        with open(options.PeopleFile,"rb") as people_file:
+            content=people_file.read()
+            encoding=chardet.detect(content)['encoding']
+            options.people=json.loads(content.decode(encoding))
     
         date_select=re.search(r'date([\(\[0-9]*),([0-9\]\)]*)',options.select)
         date_begin=None
@@ -311,7 +319,7 @@ NOTE:
             print("--------------Options------------------")
             print(options)
             print("--------------People-------------------")
-            print(json.dumps(people,indent=2))
+            print(json.dumps(options.people,indent=2))
             print("---------------------------------------")
 
         if not options.info == "":
@@ -363,7 +371,7 @@ NOTE:
                 items+=requests.get(GetRecordURL(recid)).json()
                 if (i+1)%10==0: print(str(i+1)+'/'+str(nitem))
         else:
-            for ichunk in range(nitem/25+1):
+            for ichunk in range(int(nitem/25+1)):
                 print(str(ichunk*25)+'/'+str(nitem))
                 items+=requests.get(GetQueryURL(options.query+'&jrec='+str(25*ichunk+1))).json()
             print(str(len(items))+'/'+str(nitem))
@@ -389,9 +397,10 @@ NOTE:
                         items[i], items[j] = items[j], items[i]
     
 
-        outputfile=open(os.path.join(options.output,'out.txt'),'w')
+        outputfile=open(os.path.join(options.output,'out.txt'),'w',encoding='utf-8')
         infofile=open(os.path.join(options.output,'info.txt'),'w')
         for index,item in enumerate(items):
+            global summary
             summary=[]
 
             title=GetTitle(item)
@@ -412,7 +421,7 @@ NOTE:
             if options.DEBUG: print(line)
             outputfile.write((line+'\n'))
  
-            infoline=u"{:3.3} {:9.9} {:32.32} {:10.10} {:30.30}".format(str(index+1),str(recid),GetDOI(item),GetDate(item),title.encode('utf-8'))
+            infoline=u"{:3.3} {:9.9} {:32.32} {:10.10} {:30.30}".format(str(index+1),str(recid),GetDOI(item),GetDate(item),title)
             infofile.write(infoline+'\n')
             summary=[infoline]+summary
             for l in summary: print(l)
@@ -449,7 +458,7 @@ NOTE:
  
             ambiguous=[]
             highlights=[]
-            for person in GetPeopleInItem(item,self.options.people).itervalues():
+            for person in GetPeopleInItem(item,self.options.people).values():
             #step 1. simple search
                 matches=FindPersonMatches(doc,person)
                 if options.DEBUG: print(person['full_names'][0], matches)
