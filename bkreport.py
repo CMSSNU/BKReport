@@ -4,6 +4,8 @@ import sys,os,optparse,re
 import json
 import requests
 import fitz
+import chardet
+from io import open
 
 ##################################################
 ############### Get functions#####################
@@ -350,7 +352,7 @@ NOTE:
             print('[Error] no item')
             exit(1)
     
-        print("> Total number of Items before selection:",nitem)
+        print("> Total number of Items before selection: "+str(nitem))
 
         print("> Get Json from INSPIREHEP")
         items=[]
@@ -377,7 +379,7 @@ NOTE:
                 if date >= date_end: continue
             items_selected+=[item]
         items=items_selected
-        print("> Total number of Items after selection:",len(items))
+        print("> Total number of Items after selection: "+str(len(items)))
 
         if options.info =="":
             print("> Sorting by date")
@@ -408,9 +410,9 @@ NOTE:
             #line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
             line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn.replace('-','')+'\t'+doi+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
             if options.DEBUG: print(line)
-            outputfile.write((line+'\n').encode('utf-8'))
+            outputfile.write((line+'\n'))
  
-            infoline="{:3.3} {:9.9} {:32.32} {:10.10} {:30.30}".format(str(index+1),str(recid),GetDOI(item),GetDate(item),title.encode('utf-8'))
+            infoline=u"{:3.3} {:9.9} {:32.32} {:10.10} {:30.30}".format(str(index+1),str(recid),GetDOI(item),GetDate(item),title.encode('utf-8'))
             infofile.write(infoline+'\n')
             summary=[infoline]+summary
             for l in summary: print(l)
