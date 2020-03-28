@@ -401,7 +401,7 @@ NOTE:
                 if options.DEBUG : self.Print("[DEBUG] "+str(i)+" "+str(recid)+" Get from "+self.GetRecordURL(recid))
                 item=requests.get(self.GetRecordURL(recid)).json()[0]
                 items+=[item]
-                with open(json_path,"wb") as f:
+                with open(json_path,'w',encoding='utf-8') as f:
                     json.dump(item,f)
             if (i+1)%10==0:
                 self.Print('  '+str(i+1)+'/'+str(nitem))
@@ -428,7 +428,7 @@ NOTE:
     
 
         outputfile=open(os.path.join(options.output,'out.txt'),'w',encoding='utf-8')
-        infofile=open(os.path.join(options.output,'info.txt'),'w')
+        infofile=open(os.path.join(options.output,'info.txt'),'w',encoding='utf-8')
         for index,item in enumerate(items):
             self.Progress(50+40.*index/nitem)
             self.summary=[]
