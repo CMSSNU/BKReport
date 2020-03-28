@@ -5,6 +5,7 @@ import json
 import requests
 import fitz
 import chardet
+from six import text_type
 from io import open
 
 ##################################################
@@ -15,7 +16,7 @@ class MyParser(optparse.OptionParser):
         return self.expand_prog_name(self.epilog)
 
 class BKReport:
-    def __init__(self,args):
+    def __init__(self,options=[]):
         parser=MyParser(usage='%prog {--query QEURY|--input INFILE} [--output OUTFILE] [--select SELECTIONEXP]',version='1.0',description='Listing papers using INSPIREHEP and finding authors in PDF file',epilog='''EXAMPLES: 
   ## find papars with "author = u. yang && i. park" and "typecode=Published" and "JournalYear=2019" from inspirehep.
   ## And select papers published in 2019Jan<=date<=2019June
@@ -35,7 +36,7 @@ NOTE:
         parser.add_option('-d','--debug',dest='DEBUG',action='store_true',default=False,help='debug mode')
         parser.add_option('-s','--select',dest='select',type='str',default='',help='selection expressions. "date[201708,201801]"->201708<=date<=201801. "date(201708,201801)"->201708<date<201801')
         #parser.add_option('-v','--verbose',dest='VERBOS',action='store_true',default=False,help='verbose mode')
-        (self.options, args_dummpy)=parser.parse_args(args)
+        (self.options, args_dummpy)=parser.parse_args(options)
         self.options.people={}
         self.summary=[]
         
@@ -297,9 +298,11 @@ NOTE:
     
     def run(self):
         options=self.options
+        self.Print(str(options.IsTest))
         self.Progress(1)
         if options.IsTest:
             options.query='find author u. yang and i. park and tc p and jy 2020'
+            self.Print("> QUERY: "+options.query)
 
         with open(options.PeopleFile,"rb") as people_file:
             content=people_file.read()
@@ -402,7 +405,7 @@ NOTE:
                 item=requests.get(self.GetRecordURL(recid)).json()[0]
                 items+=[item]
                 with open(json_path,'w',encoding='utf-8') as f:
-                    json.dump(item,f)
+                    f.write(text_type(json.dumps(item)))
             if (i+1)%10==0:
                 self.Print('  '+str(i+1)+'/'+str(nitem))
         self.Print('  done')

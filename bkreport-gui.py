@@ -5,13 +5,13 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 import threading, time
 
-class BKReportThread(QThread,BKReport):
+class BKReportThread(BKReport,QThread):
     print_signal=pyqtSignal(str)
     progress_signal=pyqtSignal(float)
     finish_signal=pyqtSignal()
-    def __init__(self,options):
+    def __init__(self,options,parent=None):
         BKReport.__init__(self,options)
-        QThread.__init__(self)
+        QThread.__init__(self,parent)
         
     def Print(self,msg):
         self.print_signal.emit(msg+'\n')
@@ -113,18 +113,17 @@ class BKReportApp(QWidget):
         
     def Start(self):
         self.start_button.setEnabled(False)
-        args=[]
-        if self.query_check.isChecked():
-            args+=['--query',self.query_edit.text()]
+        options=[]
+        if self.query_check.isChecked() and not self.test_check.isChecked():
+            options+=['--query',self.query_edit.text()]
         elif self.info_check.isChecked():
-            args+=['--input',self.info_path.text()]
+            options+=['--input',self.info_path.text()]
         if self.test_check.isChecked():
-            args+=['--test']
+            options+=['--test']
         if self.debug_check.isChecked():
-            args+=['--debug']
-        args+=['--people',self.people_path.text()]
-            
-        self.bk=BKReportThread(args)
+            options+=['--debug']
+        options+=['--people',self.people_path.text()]
+        self.bk=BKReportThread(options,self)
         self.bk.print_signal.connect(self.write)
         self.bk.progress_signal.connect(self.Progress)
         self.bk.finish_signal.connect(self.Finish)
