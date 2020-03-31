@@ -35,7 +35,7 @@ NOTE:
   "date" query in inspirehep is not reliable.
   So, use "journalyear(jy)" and --select argument.
 ''')
-        parser.add_option('-q','--query',dest='query',type='str',help='query string to be used for inspirehep. Refernce: https://inspirehep.net/info/hep/search-tips')
+        parser.add_option('-q','--query',dest='query',type='str',help='query string to be used for inspirehep. Refernce: https://old.inspirehep.net/info/hep/search-tips')
         parser.add_option('-i','--input',dest='info',default='',help='using info file instead of query')
         parser.add_option('-o','--output',dest='output',default='out',type='str',help='output directory')
         parser.add_option('-p','--people',dest='PeopleFile',default='people.json',help='json file with information of people to investigate')
@@ -64,10 +64,10 @@ NOTE:
     
     def GetQueryURL(self,query):
         query=query.replace(' ','+')
-        return 'https://inspirehep.net/search?of=recjson&p='+query
+        return 'https://old.inspirehep.net/search?of=recjson&p='+query
     		
     def GetRecordURL(self,recid):
-        return 'https://inspirehep.net/record/'+str(recid)+'?of=recjson'
+        return 'https://old.inspirehep.net/record/'+str(recid)+'?of=recjson'
     
     def GetTitle(self,item):
         try: title=item['title']['title']
