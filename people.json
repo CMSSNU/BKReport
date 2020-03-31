@@ -1,8 +1,17 @@
 {
-    "서현산" : {
-	"affiliation" : "Seoul Natl. U.",
-	"full_names" : ["Seo, Hyon San","Seo, Hyonsan","Seo, H.S.","Seo, H. S."],
-	"KRI" : 11111111,
-	"paper_names" : ["H. Seo","H.S. Seo","H. S. Seo"]
-    }
+  "서현산": {
+    "paper_names": [
+      "H. Seo", 
+      "H.S. Seo", 
+      "H. S. Seo"
+    ], 
+    "affiliation": "Seoul Natl. U.", 
+    "KRI": 11111111, 
+    "full_names": [
+      "Seo, Hyon San", 
+      "Seo, Hyonsan", 
+      "Seo, H.S.", 
+      "Seo, H. S."
+    ]
+  }
 }

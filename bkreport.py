@@ -5,6 +5,7 @@ import json
 import requests
 import fitz
 import chardet
+import openpyxl
 from six import text_type
 from io import open
 
@@ -16,13 +17,19 @@ class MyParser(optparse.OptionParser):
         return self.expand_prog_name(self.epilog)
 
 class BKReport:
+    avail_format=["empty","index","title","journal","issn","doi","volume","page","date","date(yyyymm)","date(yymm)","nauthor","names","kris","npeople"]
+    test_query="author u. yang and type-code p and journal-year 2020"
     def __init__(self,options=[]):
+        if len(options):
+            self.Init(options)
+        
+    def Init(self,options=[]):
         parser=MyParser(usage='%prog {--query QEURY|--input INFILE} [--output OUTFILE] [--select SELECTIONEXP]',version='1.0',description='Listing papers using INSPIREHEP and finding authors in PDF file',epilog='''EXAMPLES: 
   ## find papars with "author = u. yang && i. park" and "typecode=Published" and "JournalYear=2019" from inspirehep.
   ## And select papers published in 2019Jan<=date<=2019June
-    bekreport --query "find author u. yang and i. park and tc p and jy 2019" --selection "date[201901,201906]"
+       bekreport --query "find author u. yang and i. park and tc p and jy 2019" --selection "date[20190101,20190630]"
   ## Start from INFO file in output directory of other run.
-  bekreport --input out/info.txt --selection "date[201903,201903]"
+       bekreport --input out/info.txt --selection "date[20190301,20190331]"
 
 NOTE:
   "date" query in inspirehep is not reliable.
@@ -35,20 +42,26 @@ NOTE:
         parser.add_option('-t','--test',dest='IsTest',action='store_true',default=False,help='test mode')
         parser.add_option('-d','--debug',dest='DEBUG',action='store_true',default=False,help='debug mode')
         parser.add_option('-s','--select',dest='select',type='str',default='',help='selection expressions. "date[201708,201801]"->201708<=date<=201801. "date(201708,201801)"->201708<date<201801')
+        parser.add_option('-f','--format',dest='FormatFile',type='str',default='format.json',help='format file path')
         #parser.add_option('-v','--verbose',dest='VERBOS',action='store_true',default=False,help='verbose mode')
         (self.options, args_dummpy)=parser.parse_args(options)
         self.options.people={}
+        self.options.form=[]
         self.summary=[]
         
     def Print(self,msg):
         print(msg)
 
-    def Finish(self):
+    def Finish(self,msg):
         pass
 
     def Progress(self,prog):
         pass
 
+    def Exit(self,code=0,msg=""):
+        if msg!="": self.Print(msg)
+        exit(code)
+    
     def GetQueryURL(self,query):
         query=query.replace(' ','+')
         return 'https://inspirehep.net/search?of=recjson&p='+query
@@ -64,7 +77,7 @@ NOTE:
                 try: title=item['title_additional'][0]['title']
                 except:
                     self.Print('Cannot find title')
-                    self.Print(json.dumps(item,indent=2))
+                    self.Print(json.dumps(item,indent=2,ensure_ascii=False))
         return title
     
     def GetJournal(self,item):
@@ -94,7 +107,7 @@ NOTE:
         elif journal=='Nucl.Instrum.Meth.' and volume[0]=='A': 
             return 'Nuclear Instruments and Methods in Physics Research Section A'
         else: 
-            sys.exit('  [Error] [GetJournal] wrong journal or volume "'+journal+'" "'+volume+'"')
+            self.Exit(1,'  [Error] [GetJournal] wrong journal or volume "'+journal+'" "'+volume+'"')
     
     
     def GetISSN(self,item):
@@ -118,7 +131,7 @@ NOTE:
         elif journal=='Nuclear Instruments and Methods in Physics Research Section A':
             return '0168-9002'
         else: 
-            sys.exit('  [Error] [GetISSN] wrong journal '+journal)
+            self.Exit(1,'  [Error] [GetISSN] wrong journal '+journal)
     
     def GetVolume(self,item):
         if type(item['publication_info']) is list:
@@ -151,9 +164,9 @@ NOTE:
             date='0000-00-00'
     
         if len(date)==10:
-            return date[0:4]+date[5:7]
+            return date[0:4]+date[5:7]+date[8:10]
         else:
-            sys.exit('  [Error] [GetDate] wrong date format '+date)
+            self.Exit(1,'  [Error] [GetDate] wrong date format '+date)
     
     def GetNumberOfAuthors(self,item):
         return item['number_of_authors']
@@ -164,36 +177,36 @@ NOTE:
         if not a['full_name'] in b['full_names']: return False
         return True
     
-    def GetPeopleInItem(self,item,people):
+    def GetPeopleInItem(self,item):
         this_people={}
         for a in item['authors']:
-            for key,p in people.items():
+            for key,p in self.options.people.items():
                 if self.CheckAuthor(a,p):
                     this_people[key]=p
         return this_people
     
-    def GetPeopleNames(self,people):
+    def GetPeopleNames(self):
         names=[]
-        for key in people:
+        for key in self.options.people:
             names+=[key]
         return ','.join(names)
 
-    def GetPeopleNamesInItem(self,item,people):
-        this_people=self.GetPeopleInItem(item,people)
+    def GetPeopleNamesInItem(self,item):
+        this_people=self.GetPeopleInItem(item)
         names=[]
         for key in this_people:
             names+=[key]
         return ','.join(names)
     
-    def GetPeopleKRIsInItem(self,item,people):
-        this_people=self.GetPeopleInItem(item,people)
+    def GetPeopleKRIsInItem(self,item):
+        this_people=self.GetPeopleInItem(item)
         kris=[]
         for p in this_people.values():
             kris+=[str(p['KRI'])]
         return ','.join(kris)
         
-    def GetNumberOfPeopleInItem(self,item,people):
-        return len(self.GetPeopleInItem(item,people))
+    def GetNumberOfPeopleInItem(self,item):
+        return len(self.GetPeopleInItem(item))
     
     def GetDOI(self,item):
         if type(item['doi']) is not list:
@@ -201,7 +214,7 @@ NOTE:
         elif type(item['doi'][0]) is not list:
             return item['doi'][0]
         else:
-            sys.exit('  [Error] [GetDOI] wrong doi format')
+            self.Exit(1,'  [Error] [GetDOI] wrong doi format')
             
     def SavePaperAlt(self,item):
         count=0
@@ -219,7 +232,7 @@ NOTE:
             self.Print(errorline)
             self.summary+=[errorline]
             if self.options.DEBUG:
-                self.Print(json.dumps(item['files'],indent=2))
+                self.Print(json.dumps(item['files'],indent=2,ensure_ascii=False))
             return False
             
         r=requests.get(url)
@@ -256,7 +269,7 @@ NOTE:
         elif journal=='Physical Review D':
             url='https://journals.aps.org/prd/pdf/'+doi
         else: 
-            sys.exit('  [Error] [SavePaper] wrong journal '+journal)
+            self.Exit(1,'  [Error] [SavePaper] wrong journal '+journal)
     
         if headers: r=requests.get(url,headers=headers)
         else: r=requests.get(url)
@@ -296,18 +309,101 @@ NOTE:
                     if unique: matches+=[(i,inst)]
         return matches
     
+    @staticmethod
+    def LoadJson(filepath):
+        if not os.path.exists(filepath):
+            return None
+        with open(filepath,"rb") as f:
+            content=f.read()
+            encoding=chardet.detect(content)['encoding']
+            if encoding is None:
+                return False
+            else:
+                try:
+                    return json.loads(content.decode(encoding))
+                except:
+                    return False
+
+    @staticmethod
+    def CheckPeople(people):
+        if not type(people) is dict:
+            return False
+        for name in people:
+            if not "affiliation" in people[name]:
+                return False
+            if not "full_names" in  people[name]:
+                return False
+            if not type(people[name]["full_names"]) is list:
+                return False
+            if not "KRI" in  people[name]:
+                return False
+            if not type(people[name]["KRI"]) is int:
+                return False
+            if not "paper_names" in  people[name]:
+                return False
+            if not type(people[name]["paper_names"]) is list:
+                return False
+        return True
+
+    @staticmethod
+    def CheckFormat(form):
+        if not type(form) is list:
+            return False
+        for data in form:
+            if not data in BKReport.avail_format:
+                return False
+        return True
+    
+    def GetData(self,item,datastr):
+        if datastr == "empty":
+            return text_type('')
+        elif datastr == "title":
+            return text_type(self.GetTitle(item))
+        elif datastr == "journal":
+            return text_type(self.GetJournal(item))
+        elif datastr == "issn":
+            return text_type(self.GetISSN(item))
+        elif datastr == "doi":
+            return text_type(self.GetDOI(item))
+        elif datastr == "volume":
+            return text_type(self.GetVolume(item))
+        elif datastr == "page":
+            return text_type(self.GetPage(item))
+        elif datastr == "date":
+            return text_type(self.GetDate(item))
+        elif datastr == "date(yymm)":
+            return text_type(self.GetDate(item)[2:6])
+        elif datastr == "date(yyyymm)":
+            return text_type(self.GetDate(item)[0:6])
+        elif datastr == "nauthor":
+            return text_type(self.GetNumberOfAuthors(item))
+        elif datastr == "names":
+            return text_type(self.GetPeopleNamesInItem(item))
+        elif datastr == "kris":
+            return text_type(self.GetPeopleKRIsInItem(item))
+        elif datastr == "npeople":
+            return text_type(self.GetNumberOfPeopleInItem(item))
+        else:
+            self.Exit(1,"[Error] [GetData] No data with name "+datastr)
+
     def run(self):
         options=self.options
-        self.Print(str(options.IsTest))
         self.Progress(1)
         if options.IsTest:
-            options.query='find author u. yang and i. park and tc p and jy 2020'
-            self.Print("> QUERY: "+options.query)
-
-        with open(options.PeopleFile,"rb") as people_file:
-            content=people_file.read()
-            encoding=chardet.detect(content)['encoding']
-            options.people=json.loads(content.decode(encoding))
+            options.query=BKReport.test_query
+        if options.query is None and options.info == "":
+            self.Exit(1,"[Error] no input")
+            return
+            
+        options.people=self.LoadJson(options.PeopleFile)
+        if not BKReport.CheckPeople(options.people):
+            self.Exit(1,"[Error] Invalid people file")
+            return
+        
+        options.form=self.LoadJson(options.FormatFile)
+        if not BKReport.CheckFormat(options.form):
+            self.Exit(1,"[Error] Invalid format file")
+            return
     
         date_select=re.search(r'date([\(\[0-9]*),([0-9\]\)]*)',options.select)
         date_begin=None
@@ -317,18 +413,18 @@ NOTE:
             if date_begin[0] == '[' : date_begin=int(date_begin[1:])-1
             elif date_begin[0] == '(' : date_begin=int(date_begin[1:])
             else:
-                self.Print('[Error] Wrong selection expression')
-                exit(1)
+                self.Exit(1,'[Error] Wrong selection expression')
+                return
             date_end=date_select.group(2)
             if date_end[-1] == ']' : date_end=int(date_end[:-1])+1
             elif date_end[-1] == ')' : date_end=int(date_end[:-1])
             else:
-                self.Print('[Error] Wrong selection expression')
-                exit(1)
+                self.Exit(1,'[Error] Wrong selection expression')
+                return
 
         if options.DEBUG:
             self.Print("--------------Options------------------")
-            self.Print(json.dumps(vars(options),indent=2))
+            self.Print(json.dumps(vars(options),indent=2,ensure_ascii=False))
             self.Print("---------------------------------------")
 
         if not options.info == "":
@@ -338,14 +434,14 @@ NOTE:
             self.Print("> URL: "+self.GetQueryURL(options.query))
 
         
-        self.Print("> PEOPLE: "+self.GetPeopleNames(options.people))
+        self.Print("> PEOPLE: "+self.GetPeopleNames())
         self.Print("> SELECTION:")
         if date_begin : self.Print("    date > "+str(date_begin))
         if date_end : self.Print("    date < "+str(date_end))
 
-        if os.path.exists(options.output):
+        if os.path.exists(options.output) and os.listdir(options.output):
             suffix_index=0
-            while os.path.exists(options.output+"_"+str(suffix_index)):
+            while os.path.exists(options.output+"_"+str(suffix_index)) and os.listdir(options.output+"_"+str(suffix_index)):
                 suffix_index+=1
             options.output+='_'+str(suffix_index)
             
@@ -363,14 +459,14 @@ NOTE:
             infofilelines= [line.rstrip('\n') for line in open(options.info)]
             nitem=len(infofilelines)
             for line in infofilelines:
-                recids+=[int(line.split()[1])]
+                recids+=[int(line.split()[0])]
         else:
             request_for_num=requests.get(self.GetQueryURL(options.query).replace("recjson","xm")+'&rg=1&ot=001')
             request_for_num_search=re.search(r"Search-Engine-Total-Number-Of-Results: ([0-9]+)",request_for_num.text)
             if request_for_num_search: nitem=int(request_for_num_search.group(1))
             else:
-                self.Print("[Error] no response from INSPIREHEP")
-                exit(1)
+                self.Exit(1,"[Error] no response from INSPIREHEP")
+                return
             rg=250
             for ichunk in range(int(nitem/rg+1)):
                 short_items=requests.get(self.GetQueryURL(options.query)+'&ot=recid&rg='+str(rg)+'&jrec='+str(rg*ichunk+1)).json()
@@ -378,12 +474,12 @@ NOTE:
                     recids+=[item['recid']]
 
         if nitem < 1:
-            self.Print('[Error] no item')
-            exit(1)
+            self.Exit(1,'[Error] no item')
+            return
 
         if nitem != len(recids) :
-            self.Print('[Error] nitem != len(recids)')
-            exit(1)
+            self.Exit(1,'[Error] nitem != len(recids)')
+            return
 
         self.Print("> Total number of Items before selection: "+str(nitem))
         self.Progress(2)
@@ -405,7 +501,7 @@ NOTE:
                 item=requests.get(self.GetRecordURL(recid)).json()[0]
                 items+=[item]
                 with open(json_path,'w',encoding='utf-8') as f:
-                    f.write(text_type(json.dumps(item)))
+                    f.write(text_type(json.dumps(item,indent=2,ensure_ascii=False)))
             if (i+1)%10==0:
                 self.Print('  '+str(i+1)+'/'+str(nitem))
         self.Print('  done')
@@ -430,8 +526,9 @@ NOTE:
                         items[i], items[j] = items[j], items[i]
     
 
-        outputfile=open(os.path.join(options.output,'out.txt'),'w',encoding='utf-8')
         infofile=open(os.path.join(options.output,'info.txt'),'w',encoding='utf-8')
+        result=[]
+        result+=[options.form]
         for index,item in enumerate(items):
             self.Progress(50+40.*index/nitem)
             self.summary=[]
@@ -444,17 +541,24 @@ NOTE:
             page=self.GetPage(item)
             date=self.GetDate(item)
             nauthor=self.GetNumberOfAuthors(item)
-            people_names=self.GetPeopleNamesInItem(item,self.options.people)
-            people_kris=self.GetPeopleKRIsInItem(item,self.options.people)
-            npeople=self.GetNumberOfPeopleInItem(item,self.options.people)
+            people_names=self.GetPeopleNamesInItem(item)
+            people_kris=self.GetPeopleKRIsInItem(item)
+            npeople=self.GetNumberOfPeopleInItem(item)
             recid=item['recid']
 
             #line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
-            line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn.replace('-','')+'\t'+doi+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
-            if options.DEBUG: self.Print('[DEBUG] '+line)
-            outputfile.write((line+'\n'))
+            #line=str(index+1)+'\t'+title+'\t'+journal+'\t'+issn.replace('-','')+'\t'+doi+'\t'+volume+'\t'+page+'\t'+date+'\t'+str(nauthor)+'\t'+people_names+'\t'+people_kris+'\t'+str(npeople)
+
+            this_result=[]
+            for form in options.form:
+                if form == "index":
+                    this_result+=[text_type(index+1)]
+                else:
+                    this_result+=[self.GetData(item,form)]
+            if options.DEBUG: self.Print('[DEBUG] '+u'\t'.join(this_result))
+            result+=[this_result]
  
-            infoline=u"{:3.3} {:9.9} {:32.32} {:10.10} {:30.30}".format(str(index+1),str(recid),self.GetDOI(item),self.GetDate(item),title)
+            infoline=u"{:9.9} {:3.3} {:32.32} {:10.10} {:30.30}".format(text_type(recid),text_type(index+1),doi,date,title)
             infofile.write(infoline+'\n')
             self.summary=[infoline]+self.summary
             for l in self.summary: self.Print(l)
@@ -491,10 +595,13 @@ NOTE:
  
             ambiguous=[]
             highlights=[]
-            for person in self.GetPeopleInItem(item,self.options.people).values():
+            for person in self.GetPeopleInItem(item).values():
             #step 1. simple search
                 matches=self.FindPersonMatches(doc,person)
-                if options.DEBUG: self.Print(person['full_names'][0], matches)
+                if options.DEBUG:
+                    self.Print(person['full_names'][0])
+                    for match in matches:
+                        self.Print("P"+str(match[0])+" X"+str(match[1].x0)+" Y"+str(match[1].y0))
                 if len(matches)==1:
                     doc[matches[0][0]].addHighlightAnnot(matches[0][1])
                     highlights+=[matches[0]]
@@ -502,7 +609,10 @@ NOTE:
             #step 2. tight search
                 elif len(matches)>1:
                     matches_tight=self.FindPersonMatchesTight(doc,person)
-                    if options.DEBUG: self.Print(person['full_names'][0], matches_tight)
+                    if options.DEBUG:
+                        self.Print(person['full_names'][0])
+                        for match in matches_tight:
+                            self.Print("P"+str(match[0])+" X"+str(match[1].x0)+" Y"+str(match[1].y0))
                     if len(matches_tight)==1:
                         doc[matches_tight[0][0]].addHighlightAnnot(matches_tight[0][1])
                         highlights+=[matches_tight[0]]
@@ -512,7 +622,11 @@ NOTE:
             #step 3. select the closest to others
             page_y=doc[0].bound().y1
             for am in ambiguous:
-                if options.DEBUG: self.Print("ambiguous matches",am)
+                if options.DEBUG:
+                    self.Print("ambiguous matches")
+                    for match in am:
+                        self.Print("P"+str(match[0])+" X"+str(match[1].x0)+" Y"+str(match[1].y0))
+
                 closest=am[0]
                 record=100000
                 for match in am:
@@ -522,7 +636,8 @@ NOTE:
                             closest=match
                             record=this_record
                 doc[closest[0]].addHighlightAnnot(closest[1])
-                if options.DEBUG: self.Print("closest match",record, match)
+                if options.DEBUG:
+                    self.Print("closest match "+str(record)+", P"+str(match[0])+" X"+str(match[1].x0)+" Y"+str(match[1].y0))
                 highlights+=[closest]
 
             doc.save(os.path.join(options.output,str(index+1)+'-2.pdf'))
@@ -536,13 +651,21 @@ NOTE:
     
             if len(self.summary)>1: summaries+=self.summary
     
+        outputfile=open(os.path.join(options.output,'out.txt'),'w',encoding='utf-8')
+        outputxl=openpyxl.Workbook()
+        sheet=outputxl.active
+        for i in range(len(result)):                
+            outputfile.write(u'\t'.join(result[i])+u'\n')
+            for j in range(len(result[i])):
+                sheet.cell(i+1,j+1).value=result[i][j]
         outputfile.close()
+        outputxl.save(os.path.join(options.output,'out.xlsx'))
 
         self.Print("\n========== Summary =============")
         for l in summaries: self.Print(l)
         self.Print("============ Done ==============")
         self.Progress(100)
-        self.Finish()
+        self.Finish(os.path.abspath(options.output))
         
         
 if __name__ == "__main__":
